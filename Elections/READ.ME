@@ -1,9 +1,41 @@
 Code to demonstrate how voting simulations are done in a distance model, and
-in a random model.
+in a random model. It is provided as illustration of how we have conducted our
+research, but otherwise requires some "glue" to further process the results
+into presentable format.
 
 This code was created to produce results for the paper:
 "The Prevalence and Consequences of Ballot Truncation in Transferable-Vote Elections", by D. Marc Kilgour, Jean-Charles Grégoire, and Angèle M. Hamel.
 
+explore-spatial generates elections using a spatial model. You need to set a
+few variables in the file:
+voters = 601 # number of voters
+candidates = 6 # number of candidates
+repetitions = 5000 # number of elections to run.
 
+explore-random is used for the generation of elections with random votes,
+and random truncation. This is done in 2 steps:
+- exploration, to generate cases of interest
+- refinement of the cases of interest - held in « selection.json », with
+the other program, explore-selected.
+
+Both of these programs use the same parameters as, and use some code similar
+to, the spatial model, with the addition of one parameter, "repeats",
+which is the number of times random variations of a truncation pattern should
+be repeated to compare results.
+voters = 601
+candidates = 6
+repeats = 100
+repetitions = 5000
+
+Configuration/data files are used by the programmes.
+For explore-random.py and explore-selected.py, before running make sure
+points.txt is linked for truncation patterns.
+
+Files:
+explore-spatial.py 	generate cases of spatial model
+explore-selected.py	analyze specific cases of random model
+explore-random.py	generate cases of random model
+refine-random.py	runs cases from "selected.json" file and produces a ___case_... analysis file with more data points
+preflib.py		generates and analyzes election data files from the PREFLIB library.
 
 

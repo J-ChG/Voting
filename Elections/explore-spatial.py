@@ -16,35 +16,19 @@ consolidate = {}
 condorsetSet = {}
 Cposition = [0 for x in range(candidates)]
 
+# variety of support functions
+
+# Conditionally increase a count
 def condInc( dic, lab) :
   if lab in dic:
     dic[lab] = dic[lab] + 1
   else:
     dic[lab] = 1
 
-if False: # replaced by fiunctions below.
-    if candidates == 4:
-    # none of the winners is Condorcet -> same labelling
-    # 1 is Condorcet
-        translate1 = {'111': 'CCC', '112': 'CC2', '122': 'C22', '121': 'C2C'}
-    # another one is condorcet
-        translate2 = {'112': '22C', '122': '2CC', '121': '2C2'}
-    #
-        translate3 = {'111': '222', '112': '223', '122': '233', '121': '232'}
-    elif candidates == 5:
-    # rencontré:
-    # 1111+	1112+	1121	1122+	1123	1211	1212	1213	1221	1222+	1223
-        translate1 = {'1111': 'CCCC', '1112': 'CCC2', '1122': 'CC22', '1222': 'C222', '1123': 'CC23', '1211': 'C2CC', '1212': 'C2C2'}
-        translate2 = {'1112': '222C', '1122': '22CC', '1222': '2CCC'}
-        translate3 = {'1111': '2222', '1112': '2223', '1122': '2233', '2333': '2333'}
-    elif candidates == 6:
-        translate1 = {'111': 'CCC', '112': 'CC2', '122': 'C22', '121': 'C2C'}
-        translate2 = {'112': '22C', '122': '2CC', '121': '2C2'}
-        translate3 = {'111': '222', '112': '223', '122': '233', '121': '232'}
-    else:
-        print ("not planned for this number of candidates")
-        exit
-
+# different functions to produce a string where the index of a candidate is replaced
+# with a C, to mark the Condorcet candidate.
+# of course they could be combined into one, but their main purpose it to clean
+# up the code.
 def translate1( choix ):
     explode = list(choix)
     implode = [ 'C' if x == '1' else x for x in explode]
@@ -60,6 +44,7 @@ def translate3( choix ):
     implode = [ str(int(x)+1) for x in explode]
     return ''.join(implode)
 
+# F is first, O is other, N is none and - is null.
 def addCondorset( field, kind ):
     if field not in condorsetSet:
         condorsetSet[field] = {'-':0, 'F':0, 'O':0, 'N':0}
@@ -89,8 +74,10 @@ def subreveal(marks):
         st +="\n"
     return(st)
 
+# table to hold elections.
 voteTally = np.zeros( (candidates, voters), dtype='int16, int16' )
 
+# computes the Condorcet candidate. It is always present in the spatial model
 def condorcet(idx = None):
     present = [1 for x in range(candidates)]
     if idx is None:

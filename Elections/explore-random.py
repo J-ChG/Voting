@@ -1,3 +1,6 @@
+# explore elections based on random selection of order of candidates on ballot.
+# this code looks at specific cases.
+
 import numpy as np
 import sys
 # import argparse
@@ -9,7 +12,7 @@ voters = 601
 candidates = 6
 repeats = 100
 repetitions = 5000
-detail = False # just high level statistics.
+detail = False # just collect high level statistics.
 outData = [] # interesting cases, saved in a file for future reference or revisiting.
 
 overall = {}
@@ -52,7 +55,8 @@ def populate(depth, maximum, current):
       populate(depth+1, max(i, maximum), current + str(i))
 populate(1, 1, '1')
 
-# cases analyzed for non-standard
+# truncation cases analyzed. specific val;ues are given in terms of percentage
+# for first, second, ... candidate)
 percentages = []
 selections = []
 inputData = open('values.txt')
@@ -67,7 +71,7 @@ for i in percentages:
         new.append(int(j*voters/100))
     selections.append(new)
 
-### help function for printing.
+### support function for printing.
 def subreveal(marks):
     st = ""
     for j in range(0, len(percentages)):
@@ -209,8 +213,7 @@ for loopCount in range(repetitions):
     addCondorset(codeWinner, Cstr)
     print ( ',', codeWinner, ', ', otherWinner, outW, 'C, ', c, ", ", Cstr  )
 
-
-    if detail and status != '1W' and status != '2W':
+    if detail:
         print('MC case at iteration', status, loopCount, winners)
 # proceed with randomc voting itself.
         fh = open("case_"+str(loopCount)+".txt", 'w')
