@@ -1,0 +1,22 @@
+General:
+This set of files generate models for computation of elections according
+to various scoring vectors, including Borda. Condorcet winner, looser as well
+as various forms of Borda dominance are also computed. 
+Filter is an example of processing of the output.
+Models are in a json file, generated from spatial (generate-s) or IC/IAC models.
+They are defined for a number of voters, number of candidates, and a number of
+elections. All models are processed by up.py, but require repeating the key
+parameters to make sure that model and processing are compatible as well as 
+intended.
+The output of processing is csv formatted. Filter.py is an example of how it can
+be used to extract key statistics.
+This  code is work in progress. Should you want to use it, better contact me:
+gregoire@emt.inrs.ca
+
+
+Files: 
+filter.py		extract data from election output for comparison
+gencode.py		support module for model generating code
+generate-r.py		generate random models, IC or IAC
+generate-s.py		generate spatial models
+up.py			process models to compute elections
