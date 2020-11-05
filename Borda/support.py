@@ -23,6 +23,50 @@ def getSelections(str):
             o.append(a)
     return o
 
+# different support functions to recreate list of numbers from a string representation
+# as well as removing trailing 0s
+# completely purpose built and not exactly robust: strongly assumes that the strings are properly formed.
+def rebuild(sL):
+  digits = '0123456789'
+  idx = 0
+  res = []
+  while idx < len(sL):
+    if sL[ idx ] == '-' and (idx+1) < len(sL) and sL[ idx+1 ] in digits:# accept a - only if attached to digit.
+      sign = -1
+      idx += 1
+    else:
+      sign = 1
+    new_number = False
+    cnt = 0
+    while  idx < len(sL) and  sL[ idx ] in digits:
+      cnt = 10*cnt+digits.index( sL[ idx ] )
+      new_number = True
+      idx += 1
+    if new_number:
+        res.append( sign*cnt)
+    idx += 1
+  return res
+
+def stream(string):
+    s = 0  # start
+    e = len(string)-1  # end
+    while string[s] in ' ,[]':
+        s+=1
+    while string[e] in ' 0,]' and e>s:
+        e-=1
+    if e==s:
+        return '0'
+    else:
+        return string[s:e+1]
+
+def trim( l):
+    idx = len(l)
+    while l[idx-1] == 0:
+        idx -= 1
+    return l[:idx]
+
+
+
 # --- Used to create hash tables with lists as index
 
 # list from string
@@ -30,24 +74,48 @@ def lFRs(s): return [int(i) for i in s.split('-')]
 #string from list
 def sFRl(l): return '-'.join([str(i) for i in l])
 
+
 class ListTable:
     def __init__(self, list):
         self.table = {}
         self.index = {}
-        cnt = 0
+        self.cnt = 0
+        self.added = False
         for i in list:
             self.table[sFRl(i)] = 0
-            self.index[sFRl(i)] = cnt
-            cnt += 1
+            self.index[sFRl(i)] = self.cnt
+            self.cnt += 1
 
     def inc(self, l):
-        self.table[sFRl(l)] += 1
+        s = sFRl(l)
+        try:
+            self.table[s] += 1
+        except KeyError:
+            self.index[s] = self.cnt
+            self.table[s] = 1
+            self.added = True
+            i = self.cnt
+            self.cnt += 1
 
     def count(self, l):
-        return self.table[sFRl(l)]
+        s = sFRl(l)
+        try:
+            i = self.table[s]
+        except KeyError:
+            i = -1
+        return i
 
     def indexOf(self, l):
-        return self.index[sFRl(l)]
+        s = sFRl(l)
+        try:
+            i = self.index[s]
+        except KeyError:
+            self.added = True
+            self.index[s] = self.cnt
+            self.table[s] = 0
+            i = self.cnt
+            self.cnt += 1
+        return i
 
 
 #==========
@@ -69,6 +137,7 @@ def build(structure, prefix, index, result):
 def buildSpatialTable( nbr, buildPath = False ):
     table = [ [i for i in range(nbr)] ] # initialized with first sequence. Other values will be appended.
     preds = [[]]
+    lookupTable = {sFRl(table[0]):0}
     # each prefix is itself a sequence of indexes in table.
 
     goOn= True
@@ -83,28 +152,66 @@ def buildSpatialTable( nbr, buildPath = False ):
       track = crntIdx # to remember where we come from.
 
       # skip descending prefix.
-      while top < nbr-1 and test[top] > test[top+1] :
-        top+=1
 
-      # push down lowest value in prefix.
-      while top < nbr-1 and test[top] < test[top+1]:
-        # swap
-        test[top], test[top+1] = test[top+1], test[top]
+      if False:
+          while top < nbr-1 and test[top] > test[top+1] :
+            top+=1
 
-        # check if found - this is likely as we first rediscover the first descendent.
-        try:
-          x = table.index(test)
+          # push down lowest value in prefix.
+          while top < nbr-1 and test[top] < test[top+1]:
+            # swap
+            test[top], test[top+1] = test[top+1], test[top]
 
-          if track not in preds[x]:
-              preds[x].append(track)
+            # check if found - this is likely as we first rediscover the first descendent.
+            try:
+              x = table.index(test)
 
-          track = x
-        except ValueError:
-          table.append(test.copy()) # there may be more than one.
-          preds.append([track])
-          track = totalLgth
-          totalLgth += 1
-        top += 1
+              if track not in preds[x]:
+                  preds[x].append(track)
+
+              track = x
+            except ValueError:
+              table.append(test.copy()) # there may be more than one.
+              preds.append([track])
+              track = totalLgth
+              totalLgth += 1
+            top += 1
+      else:
+        while True:
+            tst = table[track]
+            if  (top == 0 and tst[0] < tst[1]) or (top >0 and tst[top-1] > tst[top] and tst[top] < tst[top+1]):
+
+                test = tst.copy()
+
+                test[top], test[top+1] = test[top+1], test[top]
+#                print("generation", test, "from", tst, "(",track, ") at index", top)
+
+                try:
+#                    x = table.index(test)
+                    x = lookupTable[sFRl(test)]
+#                    print("found ", x, test)
+#                    assert xp==x, "tables mismatch 1, "+' '+str(test)+' '+str(table)+' '+str(x)+' '+str(xp)
+
+                    if track not in preds[x]:
+                        preds[x].append(track)
+#                        print("added predecessor to", x, preds[x])
+
+#                    track = x
+                except KeyError:
+                    table.append(test.copy()) # there may be more than one.
+                    lookupTable[ sFRl(test) ] = totalLgth
+                    preds.append( [track] )
+#                    print("new", totalLgth, test, "from ", track)
+#                    track = totalLgth
+                    totalLgth += 1
+                top += 2
+            else:
+                top+=1
+            if top >= nbr-1:
+                break
+
+
+
 
       # move to next element to test.
       crntIdx += 1

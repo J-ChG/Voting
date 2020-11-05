@@ -1,3 +1,5 @@
+# Revision March 30th. a new start
+
 # created voteTable to avoid multiple computations thereof
 # got rid of -i for input
 # finished unification of spatial code
@@ -8,18 +10,17 @@ import numpy as np
 import random
 import itertools
 import json
-import gencode
+import support
 
 # arguments
-# -i + par - input file
-# -l - verbose
-# -t + par - process ties, with a threshold
+# -V - verbose
+# -T + par - process ties, with a threshold
 # -p + par - pattern - used to set percentages for truncations.
 # -v + par - number of voters
 # -c + par - number of candidates
 # -r + par - numnber of repetitions
 # -a + par - number of  permutations (alternaticves)
-# -T + par - Truncation level
+# -t + par - Truncation level
 
 # needs  -c #candidates -v #voters -r #repetitions + input file.
 
@@ -42,43 +43,16 @@ if False:
     else:
         inFile = myargs['-i']
 
-if "-l" in myargs:
-    verbose = True
-else:
-    verbose = False
-
-if "-t" in myargs:
-    processTies = True
-    threshold = int(myargs['-t']) # processTies is False unless a threshold value is given.
-    print("cannot process ties in this version")
-    processTies = False
-else:
-    processTies = False
-
-if "-p" in myargs:
-    patterns = [ int(i) for i in myargs["-p"].split()]
-else:
-    patterns = []
-if "-a" in myargs:
+if "-a" in myargs: # alternatives for permutations.
     nPermutations = int(myargs['-a'])
 else:
     nPermutations = 1
-if "-v" in myargs:
-    nVoters = int(myargs['-v'])
-else:
-    nVoters = 0
+
 if "-c" in myargs:
     nCandidates = int(myargs['-c'])
 else:
     nCandidates = 0
-if "-r" in myargs:
-    nCases = int(myargs['-r'])
-else:
-    nCases = 1
-if "-T" in myargs:
-    truncLevel = int(myargs['-T'])
-else:
-    truncLevel = nCandidates
+
 if "-m" in myargs:
     modelType = myargs['-m']
     assert modelType == "r" or modelType == "s", "Unknown model type "+ modelType + "."
@@ -86,6 +60,49 @@ else:
     print("Need a model type: -m r (random) or s (spatial)")
     sys.exit(0)
 
+if "-p" in myargs:
+    patterns = [ int(i) for i in myargs["-p"].split()]
+else:
+    patterns = []
+
+if "-r" in myargs:
+    nCases = int(myargs['-r'])
+else:
+    nCases = 1
+
+if "-s" in myargs:
+    selection = myargs['-s']
+else:
+    selection = ''
+
+if "-t" in myargs:
+    truncLevel = int(myargs['-t'])
+else:
+    truncLevel = nCandidates
+
+if "-T" in myargs:
+    processTies = True
+    threshold = int(myargs['-T']) # processTies is False unless a threshold value is given.
+    print("cannot process ties in this version")
+    processTies = False
+else:
+    processTies = False
+
+if "-v" in myargs:
+    nVoters = int(myargs['-v'])
+else:
+    nVoters = 0
+
+if "-V" in myargs:
+    verbose = True
+else:
+    verbose = False
+
+if "-x" in myargs:
+    xtractList = support.getSelections( myargs["-x"])
+    xtractMode = True
+else:
+    xtractMode = False
 
 assert nCases*nCandidates*nVoters != 0, "need minimally all of -c #candidates -v #voters -r #repetitions to be present"
 
@@ -95,13 +112,42 @@ firstIdx = 0
 
 # read cases to process from external file, in json format.
 
+Labels1 = support.Labels1
+Labels2 = support.Labels2
+Labels3 = support.Labels3
+LabelsStr = support.LabelsStr
+MaxGroups = support.MaxGroups
+
+# index practically start at 1 - we cannot skip index, even if we ask.
+if selection == '':
+    selectionSet = [i+1 for i in range(MaxGroups)]
+else:
+    selectionSet = support.getSelections(selection)
+    selectionSet = [ i for i in selectionSet if i <= MaxGroups ] # truncate useless.
+
 # vVector = []
 # eType = 'IC' # can be 'IC' or 'IAC'
 with open(inFile, 'r') as f:
-     (c , v, eType, vVector)  = json.load(f)
+     (c , v, m, eType, vVector) = json.load(f)
      assert c == nCandidates and v == nVoters, "mismatch between parameters and input file"
      assert eType == 'IC' or eType == 'IAC', "unknown type of vote (neither IC nor IAC)"
+     assert modelType == m, "incompatible model - " + m
 f.close()
+
+# establish all possible orders.
+# note that the "spatial model " also advertises itself as IC, so this distinctions
+# should not be necessary.
+if modelType == 'r': # randome.
+    maxOrders = math.factorial(nCandidates)
+    orders = list(itertools.permutations([i for i in range(nCandidates)]))
+    assert maxOrders == len(orders), 'mismatch in random model.'
+    ballotTypes = nVoters if eType == 'IC' else maxOrders # for IAC
+else: # spatial
+    orders, _ = support.buildSpatialTable(nCandidates)
+    maxOrders = len(orders)
+    ballotTypes = nVoters
+
+#==============  Permutations and patterns
 
 # patterns holds the data to process the random variations of elections
 # 0: percentage of representation for truncation level
@@ -144,21 +190,10 @@ def buildProfile(profile, total, maxdepth):
    list += [maxdepth for j in range( total - len(list) )]
    return list
 
-# establish all possible orders.
-if modelType == 'r':
-    maxOrders = math.factorial(nCandidates)
-    orders = list(itertools.permutations([i for i in range(nCandidates)]))
-    assert maxOrders == len(orders), 'mismatch in random model.'
-else: # spatial
-    orders, _ = gencode.buildSpatialTable(nCandidates)
-    maxOrders = len(orders)
-
-
 # data structures to keep track of results. These are standards
 # used by algorithms.
 # ballots will be filled from randomly generated data
 
-ballotTypes = nVoters if eType == 'IC' else maxOrders # for IAC
 
 # ballots collects the ballot order for all voters, complete with information
 # on ties (indices 1 and 2)
@@ -180,17 +215,26 @@ def addtorecord( matrix, vector, index ):
         matrix[index, j, 1] = matrix[index, j, 2] = 1
         j+=1
 
+#=========================== Condorcet code
+
+# the computation of Condorcet requires a precedence table (PT).
+# that is, a NxN matrix (N is the number of candidates) where
+# PT(i,j) is the number of times i is prefered over j
+
 # execution of the precedence relations
-def buildPrecedence( skipOver=False, full=False ):
+# Full controls whether the level of truncation applies of not
+# skipOver controls what we do with candidates not on the ballot (or truncated)
+#   True means that they are not counted.
+def buildPrecedenceTable( full=False, skipOver=True ):
     precedences = np.zeros( (nCandidates, nCandidates), dtype=np.int32)
 
     ii = 0
-    # external loop over all ballot types
     for i in range(ballotTypes): # for all groups
-        if full:
+        if full: # has to be here in case truncation is not uniform.
             theLimit = nCandidates
         else:
             theLimit = ballotTruncation[i]
+        # external loop over all ballot types
         for _ in range(ballotDistribution[i]): # for all instances in group. The specific index is not relevant.
             candidatesDone = [False for k in range(nCandidates)]
             j = 0
@@ -217,7 +261,7 @@ def buildPrecedence( skipOver=False, full=False ):
             # candidates not in ballot.
             # but it is conditional to a flag.
             if not skipOver:
-                print("not executed")
+                # print("not executed")
                 cdT = [c for c in range(nCandidates) if candidatesDone[c]]
                 cdF = [c for c in range(nCandidates) if not candidatesDone[c]]
     #            print(candidatesDone, cdT, cdF)
@@ -228,11 +272,50 @@ def buildPrecedence( skipOver=False, full=False ):
     assert ii == nVoters, "missing cases in precedence construction " + ii
     return precedences
 
+    # compute Condorcet
+def computeCondorcet(PT): # PT == precedence table, built from buildPrecedenceTable
+    TC = 0 # tentative Condorcet
+    for i in range(nCandidates):
+        TC = i
+        for j in range(nCandidates):
+            if (PT[i,j] <= PT[j,i]) and (j!=i):
+                TC = nCandidates
+        if TC != nCandidates:
+            break
+    if TC  == nCandidates: TC = -1
+    return TC
 
-# def dominates(a,b):
-#     return simpleDominates(a,b)
+def computeNotCondorcet(PT):
+    NC = 0
+    for i in range(nCandidates):
+        NC = i
+        for j in range(nCandidates):
+            if (PT[i,j] > PT[j,i]):
+                NC = nCandidates
+                break
+        if NC != nCandidates:
+            break
+    if NC  == nCandidates: NC = -1
+    return NC
 
-def simpleDominates(a,b): # used when we are doing comparisons on full or truncated ballots
+# The Copeland score exploits the PT but records results
+# in a differential mode only.
+# For each candidate, it indicates how often it is preferred to
+# another.
+def computeCopeland(PT):
+    results = [0 for i in range(nCandidates)]
+    for i in range(nCandidates):
+        for j in range(nCandidates):
+            if (j!=i):
+                results[i] += 1 if PT[i,j] > PT[j,i] else -1 if  PT[i,j] < PT[j,i] else 0
+    return results
+# variation without precedence table.
+
+# this one is hiding two alternatives, depending on whether or not we need to process ties.
+def precedes(a,b):
+    return simplePrecedes(a,b)
+
+def simplePrecedes(a,b): # used when we are doing comparisons on full or truncated ballots
     aAhead = 0
     bAhead = 0
     for i in range(ballotTypes):
@@ -243,10 +326,10 @@ def simpleDominates(a,b): # used when we are doing comparisons on full or trunca
             elif ballots[i,j,0] == b:
                 bAhead += ballotDistribution[i]
                 break
-    assert aAhead + bAhead == nVoters, "mismatch in domination count"
+#    assert aAhead + bAhead == nVoters, "mismatch in precedence count"
     return aAhead > bAhead
 
-def fullDominates(a,b):
+def fullPrecedes(a,b):
     # ties and truncation complicate case analysis.
     # in the simplest case, both candidates  a and b are on the ballot, and not tied.
     # but either or both could not be on the ballot, and could be tied or not. 4 cases, and one with ties.
@@ -294,31 +377,243 @@ def fullDominates(a,b):
             print("missing a and/or b on ballot, or tie?)")
     return aAhead > bAhead
 
-def checkCondorcet( skipOver=False ):
-    cSet = [i for i in range(nCandidates)]
-    eSet = set()
-    pSet = set(cSet)
-    while  pSet != set():
+def checkCondorcet():
+    # precedes handles truncation.
+    cList = [i for i in range(nCandidates)]
+    eSet = set() # elimination
+    cSet = set(cList)
+    while  cSet != set():
          # test for empty set
-        c = pSet.pop()
-        dSet = set()
-        for i in pSet:
-            if dominates(i,c):
-                dSet.add(i)
-        if dSet != set():
-            pSet &= dSet
+        c = cSet.pop()
+        pSet = set() # precedes c
+        for i in cSet:
+            if precedes(i,c):
+                pSet.add(i)
+        if pSet != set():
+            cSet &= pSet
+            eSet.add(c)
         else:
-            pSet = set()
-        eSet.add(c)
+            break # nothing found that precedes c.
     truism = True
-    for i in set(cSet) - eSet:
-        truism =  dominates(c,i)
+    # now start again to check. for all that were not found to be preceded.
+    # perform the inverse test.
+    tSet = set(cList) - eSet - {c}
+    for i in tSet:
+        truism =  precedes(c,i)
         if not truism:
             break
     if not truism:
         return -1
     else:
         return c
+
+
+
+#=============  Borda dominance.
+
+def computeDominants():
+    # build tables
+    # use global definition of voteTally
+    # compare
+    scores = [0 for i in range(nCandidates) ]
+    for i in range(nCandidates):
+        for j in range(nCandidates):
+            if j != i:
+                greater = True
+                for k in range(truncLevel):
+                    if voteTally[i,k] < voteTally[j,k]:
+                        greater = False
+                        break
+                if greater :
+                    scores[i]+=1
+    scores.sort(reverse=True)
+    return scores
+
+# compute number of candidates dominated by at least another candidate
+def computeDominated():
+    scores = 0
+    for i in range(nCandidates):
+        for j in range(nCandidates):
+            if j != i:
+                greater = False
+                for k in range(truncLevel):
+                    if voteTally[i,k] > voteTally[j,k]:
+                        greater = True
+                        break
+                if not greater :
+                    scores+=1
+                    break
+#    if scores == nCandidates:
+#        print(voteTally)
+    return scores
+
+def isDominated(c):
+    for i in range(nCandidates):
+        if c != i:
+            greater = True # assume i dominates c
+            allEqual = True
+            for k in range(truncLevel):
+                if voteTally[i,k] < voteTally[c,k]:
+                    greater = False # clearly not dominated
+                    allEqual= False # not really necessary
+                    break
+                elif  voteTally[i,k] > voteTally[c,k]:
+                    allEqual = False
+            if greater and not allEqual:
+                return True # one cas is all we need.
+    return False
+
+def dominates(a, b):
+    allEqual = True
+    for k in range(truncLevel):
+        if voteTally[a,k] < voteTally[b,k]:
+            return False # clearly dominated
+        elif voteTally[a,k] > voteTally[b,k]:
+            allEqual = False  #
+    return  not allEqual # must make sure we exclude case of all equality.
+
+# list of candidates who dominate c
+def whoDominates( c ):
+    result = []
+    for i in range(nCandidates):
+        if c != i:
+            greater = True # assume i dominates c
+            allEqual = True
+            for k in range(truncLevel):
+                if voteTally[i,k] < voteTally[c,k]:
+                    greater = False # clearly not dominated
+                    allEqual= False # not really necessary
+                    break
+                elif  voteTally[i,k] > voteTally[c,k]:
+                    allEqual = False
+            if greater and not allEqual:
+                result.append(i)
+    return result
+
+def whoIsDominatedBy(c): # reverse of preceding.
+    result = []
+    for i in range(nCandidates):
+        if c != i:
+            greater = True # assume c dominates i
+            allEqual = True
+            for k in range(truncLevel):
+                if voteTally[i,k] > voteTally[c,k]:
+                    greater = False # clearly not dominated
+                    allEqual= False # not really necessary
+                    break
+                elif  voteTally[i,k] < voteTally[c,k]:
+                    allEqual = False
+            if greater and not allEqual:
+                result.append(i)
+    return result
+
+
+# Compute votes / candidates matrix
+# returns a triplet of lists: borda dominants, non borda dominated, borda dominated
+# construction of voteTall
+def computeDominance():
+    # incremental computation of voteTally while keeping track of "winners" and their evolution
+    global voteTally
+    voteTally = np.zeros( (nCandidates, nCandidates), dtype='int16' )
+    # 1 is candidates, 2 is rounds - remember!!!
+    maxVal = 0
+    winSet = []
+    for j in range(nCandidates):
+        tmp = voteTally[j,0] = voteTable[j,0]
+        if tmp > maxVal:
+            winSet = [j]
+            maxVal = tmp
+        elif tmp == maxVal:
+            winSet.append(j)
+
+    classes = [ [] for i in range(nCandidates-1)]
+    classes[0] = winSet
+    winners = winSet.copy()
+    potentialDominant = classes[0]
+    for k in range(1,nCandidates-1): # rounds
+        maxVal = 0
+        winSet = []
+        for j in range(nCandidates):
+            voteTally[j,k] = voteTable[j,k] + voteTally[j,k-1]
+        # find the highest value for candidates who were previous winners
+        for j in winners:
+            if voteTally[j,k] > maxVal:
+                maxVal = voteTally[j,k]
+        # now check if we have a new winner.
+        for j in range(nCandidates):
+            if j not in winners and voteTally[j,k] > maxVal:
+                winSet.append(j)
+        newSet = []
+        # will have a Borda dominant winner if it is consistently
+        # winning. This must be extablished.
+        # first check if we had a candidate - has to be from round 0
+        # winSet has to be null.
+        if potentialDominant != [] and winSet == []:
+            for j in potentialDominant:
+                if voteTally[j,k] == maxVal:
+                    newSet.append(j)
+            potentialDominant = newSet
+        else: # has be reset to 0 or new winner: no luck
+            potentialDominant = []
+        classes[k] = winSet
+        winners += winSet
+
+    # Last round, final values.
+    for j in range(nCandidates):
+        voteTally[j, nCandidates-1] = nVoters
+
+    if  potentialDominant != []:
+        exclusionSet = potentialDominant
+    else:
+        exclusionSet = winners
+
+    bdFoundSet = []
+    currentSmallest = exclusionSet[0]
+
+    if True: # change of code XXX must be fixed at some point.
+        for j in range(nCandidates):
+            if  voteTally[ currentSmallest,0 ] > voteTally[j,0]:
+                currentSmallest = j
+        others = [ i for i in range(nCandidates) if i != currentSmallest]
+        cSmallests = [currentSmallest]
+        smallests = []
+        for j in others:
+            if voteTally[ currentSmallest,0 ] == voteTally[j,0]:
+                cSmallests.append(j)
+
+        for j in cSmallests:
+            others = [ i for i in range(nCandidates) if i != j]
+            smallest = True
+            for l in range(1, nCandidates-1):
+                for i in others:
+                    if voteTally[ j,l ] > voteTally[i,l]:
+                        smallest = False
+                        break
+                if not smallest:
+                    break
+            if smallest:
+                bdFoundSet.append(j)
+    else:
+        for j in range(nCandidates):
+            if j not in exclusionSet:
+                smaller = True
+                for k in range(nCandidates): # could be just winners
+                    if k != j:
+                        for l in range(nCandidates-1): # do not check last line#                                print(j, k, processingMTX[l,j ], processingMTX[l,k], processingMTX[l,j ] > processingMTX[l,k])
+                            if  voteTally[ j,l ] > voteTally[k,l]:
+                                smaller = False
+                                break
+                        if smaller:
+                            bdFoundSet.append(j)
+                            break # found one case.
+                        else:
+                            smaller = True # reset
+
+    return potentialDominant, winners, bdFoundSet
+
+
+
+#==================== Score functions.
 
 # various support functions for alternative voting models.
 def tailAverage (values, usedLength):
@@ -366,6 +661,9 @@ bsLp2 = lBSform (2)
 bsLr2 = lBSform (1.0/2)
 bsLp3 = lBSform (3)
 bsLr3 = lBSform (1.0/3)
+#
+bsC = lBSform (1.42554)
+
 #
 genBSform = lambda i, h, k, n: ((n**h - i**h) /  ( i**h *( n**h - 1) )) ** k
 def myBShunc(i, h, k):
@@ -457,6 +755,7 @@ def vote (ht, tt, tv, tb):
         ii += multiplicity
     #    print (ballots[i], results, ballotDistribution[i], ballotTruncation[i], offset, nullScore)
     assert ii == nVoters, "vote not done for right number of candidates " + str(ii)
+
     return results
 
 # specific to spatial model
@@ -491,147 +790,13 @@ def updateDepth(inputList, table, idx):
             i+=1
         toggle+=1
 
-
-def computeDominants():
-    # build tables
-    # use globl definition of voteTally
-    # compare
-    scores = [0 for i in range(nCandidates) ]
-    for i in range(nCandidates):
-        for j in range(nCandidates):
-            if j != i:
-                greater = True
-                for k in range(truncLevel):
-                    if voteTally[i,k] < voteTally[j,k]:
-                        greater = False
-                        break
-                if greater :
-                    scores[i]+=1
-    scores.sort(reverse=True)
-    return scores
-
-# compute number of candidates dominated by at least another candidate
-def computeDominated():
-    scores = 0
-    for i in range(nCandidates):
-        for j in range(nCandidates):
-            if j != i:
-                greater = False
-                for k in range(truncLevel):
-                    if voteTally[i,k] > voteTally[j,k]:
-                        greater = True
-                        break
-                if not greater :
-                    scores+=1
-                    break
-    if scores == nCandidates:
-        print(voteTally)
-    return scores
-
-# Compute votes / candidates matrix
-# returns a triplet of lists: borda dominants, non borda dominated, borda dominated
-def computeDominance():
-    # incremental computation of voteTally while keeping track of "winners" and their evolution
-    voteTally = np.zeros( (nCandidates, nCandidates), dtype='int16' ) # 1 is candidates, 2 is rounds - remember!!!
-    maxVal = 0
-    winSet = []
-    for j in range(nCandidates):
-        tmp = voteTally[j,0] = voteTable[j,0]
-        if tmp > maxVal:
-            winSet = [j]
-            maxVal = tmp
-        elif tmp == maxVal:
-            winSet.append(j)
-
-    classes = [ [] for i in range(nCandidates-1)]
-    classes[0] = winSet
-    winners = winSet.copy()
-    potentialDominant = classes[0]
-    for k in range(1,nCandidates-1): # rounds
-        maxVal = 0
-        winSet = []
-        for j in range(nCandidates):
-            voteTally[j,k] = voteTable[j,k] + voteTally[j,k-1]
-        # find the highest value for candidates who were previous winners
-        for j in winners:
-            if voteTally[j,k] > maxVal:
-                maxVal = voteTally[j,k]
-        # now check if we have a new winner.
-        for j in range(nCandidates):
-            if j not in winners and voteTally[j,k] > maxVal:
-                winSet.append(j)
-        newSet = []
-        # will have a Borda dominant winner if it is consistently
-        # winning. This must be extablished.
-        # first check if we had a candidate - has to be from round 0
-        # winSet has to be null.
-        if potentialDominant != [] and winSet == []:
-            for j in potentialDominant:
-                if voteTally[j,k] == maxVal:
-                    newSet.append(j)
-            potentialDominant = newSet
-        else: # has be reset to 0 or new winner: no luck
-            potentialDominant = []
-        classes[k] = winSet
-        winners += winSet
-
-    # Last round, final values.
-    for j in range(nCandidates):
-        voteTally[j, nCandidates-1] = nVoters
-
-    if  potentialDominant != []:
-        exclusionSet = potentialDominant
-    else:
-        exclusionSet = winners
-
-    bdFoundSet = []
-    currentSmallest = exclusionSet[0]
-
-    if True:
-        for j in range(nCandidates):
-            if  voteTally[ currentSmallest,0 ] > voteTally[j,0]:
-                currentSmallest = j
-        others = [ i for i in range(nCandidates) if i != currentSmallest]
-        cSmallests = [currentSmallest]
-        smallests = []
-        for j in others:
-            if voteTally[ currentSmallest,0 ] == voteTally[j,0]:
-                cSmallests.append(j)
-
-        for j in cSmallests:
-            others = [ i for i in range(nCandidates) if i != j]
-            smallest = True
-            for l in range(1, nCandidates-1):
-                for i in others:
-                    if voteTally[ j,l ] > voteTally[i,l]:
-                        smallest = False
-                        break
-                if not smallest:
-                    break
-            if smallest:
-                bdFoundSet.append(j)
-    else:
-        for j in range(nCandidates):
-            if j not in exclusionSet:
-                smaller = True
-                for k in range(nCandidates): # could be just winners
-                    if k != j:
-                        for l in range(nCandidates-1): # do not check last line#                                print(j, k, processingMTX[l,j ], processingMTX[l,k], processingMTX[l,j ] > processingMTX[l,k])
-                            if  voteTally[ j,l ] > voteTally[k,l]:
-                                smaller = False
-                                break
-                        if smaller:
-                            bdFoundSet.append(j)
-                            break # found one case.
-                        else:
-                            smaller = True # reset
-
-    return potentialDominant, winners, bdFoundSet
 # ----
 # allWinners = set() -- check note that it needs to be reset, so ...
-
-def maxes( l, offset ):
-    global allWinners
+# offSet is index offset
+# aW set of all winners. it is modified by the function to be used over
+# l is list of values.
+# approach chosen because it is used in a list comprehension.
+def maxes( l, aW, offset ):
     max = 0
     res = []
     for i, v in enumerate(l):
@@ -640,13 +805,15 @@ def maxes( l, offset ):
         res = [i+offset]
       elif v == max:
         res.append(i+offset)
-    allWinners |= set(res)
+    aW |= set(res)
     return  ','.join([ str(i) for i in res])
 
 
 # we are generating a number of random cases based on the value of "repeats"
 
-print(";Borda; L0; Lp2; Lr2; Lp3; Lr3; I0; Ip2; Ir2; Ip3; Ir3; H2p1; H2p2; H2r2; H3p1; H3p3; H3r3; allW; Ccet; NCcet; NCinAW; BDt; NotBDted; BDted")
+if not xtractMode:
+    print(' ; '.join(LabelsStr))
+# print(";Borda; L0; Lp2; Lr2; Lp3; Lr3; I0; Ip2; Ir2; Ip3; Ir3; H2p1; H2p2; H2r2; H3p1; H3p3; H3r3; allW; Ccet; NCcet; NCinAW; BDt; NotBDted; BDted")
 # print( ",nTO1/tail0/tiesAvg/Top,,nTO1/tail0/tiesAvg/Bottom,,1OVERn/tail0/tiesAvg/Top,,1OVERn/tail0/tiesAvg/Bottom,,AP/tail0/tiesAvg/Top,,GP(old)/tail0/tiesAVG/Top,,Condorcet")
 
 idx = 0
@@ -655,7 +822,7 @@ totalVotes = nVoters
 for v in vVector :
     # enumeration for all cases.
     idx +=1
-    if eType == 'IC':
+    if eType == 'IC' or modelType == 's': # again, this should not be necessary.
         ballotDistribution = np.ones( ballotTypes, dtype=np.int32)
         for i in range (ballotTypes):
             addtorecord( ballots, orders[v[i]], i )
@@ -673,44 +840,6 @@ for v in vVector :
         print("ballot types", bd, sum(bd))
         print(ballots[ [i for i in range(ballotTypes)],:,:])
 
-
-    truncatedPrecedenceTable = buildPrecedence(True, False)
-    fullPrecedenceTable = buildPrecedence(True, True)
-    if verbose:
-        print("Precedence Table -")
-        print( truncatedPrecedenceTable)
-
-    # compute Condorcet
-    FC = TC = 0
-    for i in range(nCandidates):
-        TC = i
-        for j in range(nCandidates):
-            if (truncatedPrecedenceTable[i,j] < truncatedPrecedenceTable[j,i]):
-                TC = nCandidates
-        if TC != nCandidates:
-            break
-    for i in range(nCandidates):
-        FC = i
-        for j in range(nCandidates):
-            if (fullPrecedenceTable[i,j] < fullPrecedenceTable[j,i]):
-                FC = nCandidates
-        if FC != nCandidates:
-            break
-
-    if FC  == nCandidates: FC = -1
-    if TC  == nCandidates: TC = -1
-
-    NC = 0
-    for i in range(nCandidates):
-        NC = i
-        for j in range(nCandidates):
-            if (truncatedPrecedenceTable[i,j] > truncatedPrecedenceTable[j,i]):
-                NC = nCandidates
-                break
-        if NC != nCandidates:
-            break
-    if NC  == nCandidates: NC = -1
-
     voteTable = np.zeros( (nCandidates, nCandidates), dtype='int16' ) # 1 is candidates, 2 is rounds
     for i in range (nCandidates): # i is round
         for j in range (ballotTypes): # j is ballot
@@ -725,44 +854,93 @@ for v in vVector :
             for j in range (nCandidates):
                 voteTally[j,i] = voteTable[j,i] + voteTally[j,i-1]
 
-    if False:
-        dominates  = simpleDominates
-        Cprime = checkCondorcet()
-        dominates  = fullDominates
-        Csecond = checkCondorcet()
-        if C == Cprime and C == Csecond :
-            Cstr = "Match"
-        else:
-            Cstr = "Mismatch" +str(C+firstIdx)+"-"+str(Cprime)+"-"+str(Csecond)
-
-    if True:
+    if 1 in selectionSet:
+        SelectL = True
+        SelectI = True
+        SelectH = False
         results = [ vote(ballotScores1, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsL0, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsLp2, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsLr2, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsLp3, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsLr3, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsInv0, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsInvp2, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsInvr2, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsInvp3, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsInvr3, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsH2p1, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsH2p2, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsH2r2, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsH3p1, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsH3p3, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsH3r3, tailScores0, tiesAVG, 0) ]
-    #    winners = [ i.index(max(i))+firstIdx for i in results]
-        allWinners = set() # important reset
-        winners = [ maxes(i,firstIdx) for i in results]
-
-        bd,nbd,bdted = computeDominance()
-# 17 components in results.
-        print( "# "+str(idx), ';', '; '.join([ str(i) for i in winners]), ';' , allWinners, ";", str(TC+firstIdx), ';', str(NC+firstIdx), ";", NC in allWinners, ';' , bd, ';', nbd, ";", bdted, ";", str(FC+firstIdx), ";" , computeDominants(), ";" , computeDominated())
+        results += [vote(bsL0, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
+        results += [vote(bsLp2, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
+        results += [vote(bsLr2, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
+        results += [vote(bsLp3, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
+        results += [vote(bsLr3, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
+        results += [vote(bsInv0, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
+        results += [vote(bsInvp2, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
+        results += [vote(bsInvr2, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
+        results += [vote(bsInvp3, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
+        results += [vote(bsInvr3, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
+#
+        results += [vote(bsC, tailScores0, tiesAVG, 0) ]
+#        results += [vote(bsH2p1, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
+        results += [vote(bsH2p2, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
+        results += [vote(bsH2r2, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
+        results += [vote(bsH3p1, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
+        results += [vote(bsH3p3, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
+        results += [vote(bsH3r3, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
+        #    winners = [ i.index(max(i))+firstIdx for i in results]
+        allWinners = set() # important reset - note that it is modified by maxes!
+        winners = [ maxes(i, allWinners, firstIdx) if i != [] else -1 for i in results ]
+        winners.append(allWinners)
     else:
+        winners = ['-' for i in range(len(Labels1))]
+    assert len(winners) == len(Labels1), 'Failed'+str(results)+'\n'+str(winners)
+
+    if 2 in selectionSet: # ["Ccet", 'NCcet', 'FC', 'TCi', 'TCe']
+        if truncLevel == nCandidates:
+            PT = buildPrecedenceTable( True, False) # full condorcet
+#        PTft = buildPrecedenceTable( False, True)
+        else:
+            PT = buildPrecedenceTable( False, False) # truncated condorcet
+        # TCa = checkCondorcet()
+        # winners.append(TCa+firstIdx)
+        CC = computeCondorcet ( PT )
+        CV = computeCopeland(PT)
+        # print( PT, CC, CV)
+        if xtractMode and (idx-1) in xtractList:
+            print(idx-1, CC, PT)
+        # assert TCa == TCb, "condorcet mismatch" + str(TCa) + '-' + str(TCb)
+        if truncLevel == nCandidates:
+            winners.append(CC+firstIdx)
+            winners.append('-')
+        else:
+            winners.append('-')
+            winners.append(CC+firstIdx)
+
+        if False:
+            winners.append( checkCondorcet() )
+        else:
+            winners.append(CV)
+        # winners.append('-') # no longer computing condorcet under CheckCondorcet
+        # winners.append(FC+firstIdx)
+        DtedSet = whoDominates( CC ) if CC != -1 else []
+        winners.append(DtedSet)
+        DsSet = whoIsDominatedBy( CC ) if CC != -1 else []
+        winners.append(DsSet)
+
+#        if DtedSet != []:
+#                print (PT, voteTable, voteTally)
+    else:
+        winners += ['-' for i in range(len(Labels2))]
+    assert len(winners) == len(Labels1) + len(Labels2)
+
+    if 3 in selectionSet:
         bd,nbd,bdted = computeDominance()
-        print( "# "+str(idx), ';', str(TC+firstIdx), ';', str(NC+firstIdx), ';' , bd, ';', nbd, ";", bdted, ";", str(FC+firstIdx), ";" , computeDominants(), ";" , computeDominated())
+        winners.append(bd) #22
+        winners.append(nbd) #23
+        winners.append(bdted) #24
+        winners.append(computeDominants() if True else '-') # 25
+        winners.append(computeDominated() if True else '-') #26
+        winners.append(False) #27 # isDominated(TC) if TC != -1 else False
+        winners.append(dominates(1,2) if True else '-') # 28
+    else:
+        winners += ['-' for i in range(len(Labels3))]
+    assert len(winners) == len(Labels1) + len(Labels2)  + len(Labels3)
+
+    outLine = "# "+str(idx)+';' + '; '.join([ str(i) for i in winners])
+
+    if not xtractMode:
+        print(outLine)
+
     votesLength = np.zeros(nCandidates, dtype=np.int32)
     ballots = np.zeros( (ballotTypes, nCandidates, 3), dtype=np.int32)    # next a count of the number of votes for that ballot type
     ballotDistribution = np.zeros( ballotTypes, dtype=np.int32)
