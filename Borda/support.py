@@ -1,7 +1,20 @@
 # Misc support code, shared between different programmes, placed here
-# to facilitate interop.
+# to facilitate interoperability - and help with consistency.
 
 # ---- options management
+import itertools
+
+# ---
+def getopts(argv):
+    opts = {}  # Empty dictionary to store key-value pairs.
+    while argv:  # While there are arguments left to parse...
+        if argv[0][0] == '-':  # Found a "-name value" pair.
+            opts[argv[0]] = argv[1]  # Add key and value to the dictionary.
+        lA = argv[0]
+        argv = argv[1:]  # Reduce the argument list by copying it starting from index 1.
+    return opts, lA
+
+# ---
 
 # extract numbers from a string parameter to build a list.
 # e.g. '1,3,5-8'
@@ -65,8 +78,6 @@ def trim( l):
         idx -= 1
     return l[:idx]
 
-
-
 # --- Used to create hash tables with lists as index
 
 # list from string
@@ -119,7 +130,7 @@ class ListTable:
 
 
 #==========
-# code originally from paths .py, but trimmed.
+# used for spatial models.
 # recursive function to build all paths, using reverse reachability.
 def build(structure, prefix, index, result):
     if index == 0:
@@ -226,20 +237,33 @@ def buildSpatialTable( nbr, buildPath = False ):
 
 # ======
 
-# management of block structure.
 
-Labels1 = ["Borda",
-    "L0", "Lp2", "Lr2", "Lp3", "Lr3",
-    "I0", "Ip2", "Ir2", "Ip3", "Ir3",
-    "H2p1", "H2p2", "H2r2", "H3p1", "H3p3", "H3r3",
-    "allW"]
-Labels2 = ["Ccet", 'NCcet', 'FC', 'TCi', 'TCe']
-Labels3 = [ "BDt", "NotBDted", "BDted", "dominants", "dominated", "isTCdominated", "1 dominates 2" ]
-Labelse = ["FB"]
-LabelsStr = ["index"] + Labels1 + Labels2 + Labels3 + Labelse
-LabelsSet = [ ["index"], Labels1,  Labels2,  Labels3, Labelse ]
+def spatialOrders(nCandidates):
+    orders, _ = buildSpatialTable(nCandidates)
+    return orders
+
+def COrders(nCandidates):
+    return list(itertools.permutations([i for i in range(nCandidates)]))
+
+
+# management of block structure.
+# first block for score vectors - self explaining
+Labels1 = ["Borda","L0", "Lp2", "Lr2", "Lp3", "Lr3","I0", "Ip2", "Ir2", "Ip3", "Ir3", "Cv", "allW"]
+# second block for Condorcet, Copeland
+# Condorcet Winner, Condorcet Loser, Condorcet Truncated Winner,???, Copeland scores, Who dominates the C.W., Who is dominated by the C.W.
+# and the same for the loser
+Labels2 = ["CcetW", 'CcetL', "CcetTW", 'Cop', 'Doms', "Domteds", 'DomsL', "DomtedsL" ]
+# Borda computations: borda dominants, non borda dominated, borda dominated, ..., ..., ...
+Labels3 = [ "BDt", "NotBDted", "BDted", "dominants", "dominated", "1d2" ]
+# 'Borda,L0, Lp2, Lr2, Lp3, Lr3,I0, Ip2, Ir2, Ip3, Ir3, CcetW, CcetW, NCcet, Cop, Doms, Domteds,BDt, NotBDted, BDted, dominants, dominated'
+allLabels = Labels1 + Labels2 + Labels3
+# LabelsSet = [ Labels1,  Labels2,  Labels3 ]
 
 MaxGroups = 3
+
+# for earlier files.
+conversion = { "Borda": 1, "L0":2, "Lp2": 3, "Lr2": 4, "Lp3":5, "Lr3": 6, "I0":7, "Ip2": 8, "Ir2": 9, "Ip3": 10, "Ir3": 11,
+               "allW": 18, "CcetW": 19,  "CcetTW": 20, 'Cop': 21, 'Doms':22, "Domteds":23,  "BDt": 24, "NotBDted":25, "BDted": 26 }
 
 def LabelsList( labels, empty = False ):
     if empty:

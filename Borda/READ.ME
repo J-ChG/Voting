@@ -1,22 +1,24 @@
 General:
-This set of files generate models for computation of elections according
-to various scoring vectors, including Borda. Condorcet winner, looser as well
+This set of files generates models for computation of elections according
+to various scoring vectors, including Borda. Condorcet winner and loser as well
 as various forms of Borda dominance are also computed. 
-Filter is an example of processing of the output.
-Models are in a json file, generated from spatial (generate-s) or IC/IAC models.
-They are defined for a number of voters, number of candidates, and a number of
-elections. All models are processed by up.py, but require repeating the key
-parameters to make sure that model and processing are compatible as well as 
-intended.
-The output of processing is csv formatted. Filter.py is an example of how it can
-be used to extract key statistics.
-This  code is work in progress. Should you want to use it, better contact me:
-gregoire@emt.inrs.ca
 
+support.py contains various pieces of code and definitions used across all pieces of code, for consistency.
+
+Models are in a json file, generated from spatial (generate-s) or IC/IAC (generate-s) models (yes, these two could be merged.)
+
+The json files contains the parameters used for their generation: number of voters, number of candidates, and a number of elections, as well as the specific model. Their name also reflects this information.
+
+All models are processed by up.py to compute elections. The output is also a json file with results (in a dictionary) but, again, generation parameters.
+By default up.py computes all possible values, but it is possible to choose a subset of values. 
+
+Filter.py is an example of how data can be accessed to extract key statistics.
+
+This code is work in progress. Should you want to use it, better contact me first: Jean-Charles.Gregoire@inrs.ca
 
 Files: 
 filter.py		extract data from election output for comparison
-gencode.py		support module for model generating code
 generate-r.py		generate random models, IC or IAC
 generate-s.py		generate spatial models
+support.py		misc. definitions and functions all programmes
 up.py			process models to compute elections

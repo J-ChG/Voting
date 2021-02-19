@@ -8,7 +8,6 @@ import sys
 import math
 import numpy as np
 import random
-import itertools
 import json
 import support
 
@@ -36,163 +35,111 @@ def getopts(argv):
 myargs, lastArg = getopts(sys.argv)
 inFile = lastArg
 
-if False:
-    if not '-i' in myargs:  # Example usage.
-        print ("Missing -i option for input")
-        sys.exit()
-    else:
-        inFile = myargs['-i']
-
-if "-a" in myargs: # alternatives for permutations.
-    nPermutations = int(myargs['-a'])
-else:
-    nPermutations = 1
-
 if "-c" in myargs:
     nCandidates = int(myargs['-c'])
 else:
     nCandidates = 0
-
-if "-m" in myargs:
-    modelType = myargs['-m']
-    assert modelType == "r" or modelType == "s", "Unknown model type "+ modelType + "."
-else:
-    print("Need a model type: -m r (random) or s (spatial)")
-    sys.exit(0)
-
-if "-p" in myargs:
-    patterns = [ int(i) for i in myargs["-p"].split()]
-else:
-    patterns = []
-
-if "-r" in myargs:
-    nCases = int(myargs['-r'])
-else:
-    nCases = 1
-
-if "-s" in myargs:
-    selection = myargs['-s']
-else:
-    selection = ''
-
-if "-t" in myargs:
-    truncLevel = int(myargs['-t'])
-else:
-    truncLevel = nCandidates
-
-if "-T" in myargs:
-    processTies = True
-    threshold = int(myargs['-T']) # processTies is False unless a threshold value is given.
-    print("cannot process ties in this version")
-    processTies = False
-else:
-    processTies = False
 
 if "-v" in myargs:
     nVoters = int(myargs['-v'])
 else:
     nVoters = 0
 
+if "-m" in myargs:
+    modelType = myargs['-m']
+    assert modelType == "r" or modelType == "s", "Unknown model type "+ modelType + "."
+else:
+    modelType = None
+#    print("Need a model type: -m r (random) or s (spatial)")
+#    sys.exit(0)
+
+if "-r" in myargs:
+    nCases = int(myargs['-r'])
+else:
+    nCases = 0
+
+if "-o" in myargs:
+    offset = int(myargs['-o'])
+else:
+    offset = 0
+
+if "-s" in myargs:
+    selection = myargs['-s']
+else:
+    selection = None
+
+if "-t" in myargs:
+    truncLevel = int(myargs['-t'])
+else:
+    truncLevel = None
+
+processTies = False
+xtractMode = False
+
+
 if "-V" in myargs:
     verbose = True
 else:
     verbose = False
 
-if "-x" in myargs:
-    xtractList = support.getSelections( myargs["-x"])
-    xtractMode = True
-else:
-    xtractMode = False
-
-assert nCases*nCandidates*nVoters != 0, "need minimally all of -c #candidates -v #voters -r #repetitions to be present"
-
 # offset for candidates. In case we use a data file where candidates are 1..n
 # here we'll consider 0..n-1
 firstIdx = 0
 
-# read cases to process from external file, in json format.
-
-Labels1 = support.Labels1
-Labels2 = support.Labels2
-Labels3 = support.Labels3
-LabelsStr = support.LabelsStr
-MaxGroups = support.MaxGroups
-
-# index practically start at 1 - we cannot skip index, even if we ask.
-if selection == '':
-    selectionSet = [i+1 for i in range(MaxGroups)]
-else:
-    selectionSet = support.getSelections(selection)
-    selectionSet = [ i for i in selectionSet if i <= MaxGroups ] # truncate useless.
-
-# vVector = []
 # eType = 'IC' # can be 'IC' or 'IAC'
 with open(inFile, 'r') as f:
-     (c , v, m, eType, vVector) = json.load(f)
+     (c , v, m, eType, orders, vVector) = json.load(f)
+     if nCandidates == 0:
+         nCandidates = c
+     if  nVoters == 0:
+         nVoters = v
+     if nCases == 0:
+         nCases = len(vVector)
+     if modelType == None:
+         modelType = m
+     if truncLevel == None:
+         truncLevel = nCandidates
+     assert modelType == m, "incompatible model - " + m
+     assert nCases + offset <= len (vVector), "not enough cases in source file"
+     assert nCases*nCandidates*nVoters != 0, "need minimally all of -c #candidates -v #voters -r #repetitions to be present"
      assert c == nCandidates and v == nVoters, "mismatch between parameters and input file"
      assert eType == 'IC' or eType == 'IAC', "unknown type of vote (neither IC nor IAC)"
-     assert modelType == m, "incompatible model - " + m
 f.close()
+
+# process what comes out
+if selection == None:
+    selects = support.allLabels
+    select1 = select2 = select3 = True
+else:
+    selects = [ i.strip() for i in  selection.split(',')]
+    select1 = select2 = select3 = False
+    for i in selects:
+        if i in support.Labels1: select1 = True
+        if i in support.Labels2: select2 = True
+        if i in support.Labels3: select3 = True
+
+outputs = dict()
+
+for i in selects:
+    if i in support.allLabels:
+        outputs[i] = []
+    else:
+        print ("unknown label" + i)
+        sys.exit(0)
 
 # establish all possible orders.
 # note that the "spatial model " also advertises itself as IC, so this distinctions
 # should not be necessary.
 if modelType == 'r': # randome.
     maxOrders = math.factorial(nCandidates)
-    orders = list(itertools.permutations([i for i in range(nCandidates)]))
     assert maxOrders == len(orders), 'mismatch in random model.'
     ballotTypes = nVoters if eType == 'IC' else maxOrders # for IAC
 else: # spatial
-    orders, _ = support.buildSpatialTable(nCandidates)
     maxOrders = len(orders)
     ballotTypes = nVoters
 
-#==============  Permutations and patterns
+assert nCases*nCandidates*nVoters != 0, "need minimally all of -c #candidates -v #voters -r #repetitions to be present"
 
-# patterns holds the data to process the random variations of elections
-# 0: percentage of representation for truncation level
-# 1: scaling factor to match percentage to number of voters. It is assumed that
-# the number of voters is a multiple of 100. This could/should actually be derived from
-# nVoters.
-# 2: repetitions ???
-# 3: nCandidates???
-
-if patterns == []:
-    patterns = [0 for i in range(nCandidates)]
-    patterns[-1] = 100
-
-assert len(patterns) == nCandidates, "mismatch between candidates and number of patterns"
-assert sum(patterns) == 100, "sum of truncation patterns different from 100%"
-
-# There is a relation with patterns and permutations. If the pattern is random, then
-# we need permutations in its application.
-if 100 in patterns:
-    nPermutations = 1 # already set before, but does not hurt.
-
-pattern = [patterns, nVoters / 100, nPermutations, nCandidates]
-
-# exploit truncation profile.
-# profile is list of percentages of cuts, adding up to 100
-# this include possibility that it is fixed.
-# maxdepth is depth to exploit.
-# total is number of voters.
-# scale is the translation from % to number of voters.
-def buildProfile(profile, total, maxdepth):
-   if 100 in profile:
-      return [ profile.index(100)+1 for i in range (total) ]
-   t = 0
-   list = []
-   scale = total/100
-   for i in profile:
-     t+=1
-     list += [t for j in range(0,int(i*scale)) ]
-
-   list += [maxdepth for j in range( total - len(list) )]
-   return list
-
-# data structures to keep track of results. These are standards
-# used by algorithms.
-# ballots will be filled from randomly generated data
 
 
 # ballots collects the ballot order for all voters, complete with information
@@ -273,7 +220,7 @@ def buildPrecedenceTable( full=False, skipOver=True ):
     return precedences
 
     # compute Condorcet
-def computeCondorcet(PT): # PT == precedence table, built from buildPrecedenceTable
+def computeCondorcetWinner(PT): # PT == precedence table, built from buildPrecedenceTable
     TC = 0 # tentative Condorcet
     for i in range(nCandidates):
         TC = i
@@ -285,17 +232,17 @@ def computeCondorcet(PT): # PT == precedence table, built from buildPrecedenceTa
     if TC  == nCandidates: TC = -1
     return TC
 
-def computeNotCondorcet(PT):
+def computeCondorcetLoser(PT):
     NC = 0
     for i in range(nCandidates):
         NC = i
         for j in range(nCandidates):
-            if (PT[i,j] > PT[j,i]):
-                NC = nCandidates
+            if j != i and PT[i,j] > PT[j,i]: # j dominated by i
+                NC = nCandidates # fail
                 break
-        if NC != nCandidates:
+        if NC != nCandidates: # succeeded
             break
-    if NC  == nCandidates: NC = -1
+    if NC  == nCandidates: NC = -1  # checked the whole thing.
     return NC
 
 # The Copeland score exploits the PT but records results
@@ -406,8 +353,6 @@ def checkCondorcet():
         return -1
     else:
         return c
-
-
 
 #=============  Borda dominance.
 
@@ -790,12 +735,10 @@ def updateDepth(inputList, table, idx):
             i+=1
         toggle+=1
 
-# ----
-# allWinners = set() -- check note that it needs to be reset, so ...
-# offSet is index offset
-# aW set of all winners. it is modified by the function to be used over
-# l is list of values.
-# approach chosen because it is used in a list comprehension.
+
+# identifies the index of largest value in set l e.g. winner
+# can be multiple indexes because of ties
+# adds those indexes to a set a all indexes of max values
 def maxes( l, aW, offset ):
     max = 0
     res = []
@@ -805,21 +748,13 @@ def maxes( l, aW, offset ):
         res = [i+offset]
       elif v == max:
         res.append(i+offset)
-    aW |= set(res)
-    return  ','.join([ str(i) for i in res])
-
-
-# we are generating a number of random cases based on the value of "repeats"
-
-if not xtractMode:
-    print(' ; '.join(LabelsStr))
-# print(";Borda; L0; Lp2; Lr2; Lp3; Lr3; I0; Ip2; Ir2; Ip3; Ir3; H2p1; H2p2; H2r2; H3p1; H3p3; H3r3; allW; Ccet; NCcet; NCinAW; BDt; NotBDted; BDted")
-# print( ",nTO1/tail0/tiesAvg/Top,,nTO1/tail0/tiesAvg/Bottom,,1OVERn/tail0/tiesAvg/Top,,1OVERn/tail0/tiesAvg/Bottom,,AP/tail0/tiesAvg/Top,,GP(old)/tail0/tiesAVG/Top,,Condorcet")
+    return  aW | set(res), res
 
 idx = 0
-totalVotes = nVoters
+# totalVotes = nVoters
 
-for v in vVector :
+for xx in range( offset, offset+nCases ) :
+    v = vVector[xx]
     # enumeration for all cases.
     idx +=1
     if eType == 'IC' or modelType == 's': # again, this should not be necessary.
@@ -835,7 +770,7 @@ for v in vVector :
 #    resultTable = np.zeros( (pattern[2], nResults), dtype=np.int32)
 #    resultTally = np.zeros( ( nResults, nCandidates+1 ), dtype=np.int32)
 
-    if  verbose:
+    if  False:
         bd = [ballotDistribution[i] for i in range(ballotTypes)]
         print("ballot types", bd, sum(bd))
         print(ballots[ [i for i in range(ballotTypes)],:,:])
@@ -845,7 +780,7 @@ for v in vVector :
         for j in range (ballotTypes): # j is ballot
             voteTable[ ballots[j,i,0], i] += ballotDistribution[j]
     if verbose:
-        print(voteTable)
+        print("Vote table: ", voteTable)
 
     voteTally = np.zeros( (nCandidates, nCandidates), dtype='int16' ) # 1 is candidates, 2 is rounds - remember!!!
     for i in range(nCandidates):
@@ -853,109 +788,101 @@ for v in vVector :
     for i in range(1, nCandidates):
             for j in range (nCandidates):
                 voteTally[j,i] = voteTable[j,i] + voteTally[j,i-1]
+    if verbose:
+        print("Vote tally:", voteTally)
 
-    if 1 in selectionSet:
-        SelectL = True
-        SelectI = True
-        SelectH = False
-        results = [ vote(ballotScores1, tailScores0, tiesAVG, 0) ]
-        results += [vote(bsL0, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
-        results += [vote(bsLp2, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
-        results += [vote(bsLr2, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
-        results += [vote(bsLp3, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
-        results += [vote(bsLr3, tailScores0, tiesAVG, 0) ] if SelectL else [[ -1 ]]
-        results += [vote(bsInv0, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
-        results += [vote(bsInvp2, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
-        results += [vote(bsInvr2, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
-        results += [vote(bsInvp3, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
-        results += [vote(bsInvr3, tailScores0, tiesAVG, 0) ] if SelectI else [[ -1 ]]
-#
-        results += [vote(bsC, tailScores0, tiesAVG, 0) ]
-#        results += [vote(bsH2p1, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
-        results += [vote(bsH2p2, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
-        results += [vote(bsH2r2, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
-        results += [vote(bsH3p1, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
-        results += [vote(bsH3p3, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
-        results += [vote(bsH3r3, tailScores0, tiesAVG, 0) ] if SelectH else [[ -1 ]]
-        #    winners = [ i.index(max(i))+firstIdx for i in results]
-        allWinners = set() # important reset - note that it is modified by maxes!
-        winners = [ maxes(i, allWinners, firstIdx) if i != [] else -1 for i in results ]
-        winners.append(allWinners)
-    else:
-        winners = ['-' for i in range(len(Labels1))]
-    assert len(winners) == len(Labels1), 'Failed'+str(results)+'\n'+str(winners)
+    if select1:
+        allWinners = set()
+    # "Borda", "L0", "Lp2", "Lr2", "Lp3", "Lr3", "I0", "Ip2", "Ir2", "Ip3", "Ir3", "allW"
+        if "Borda" in selects:
+            allWinners, winners = maxes ( vote(ballotScores1, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Borda"].append( winners )
+        if "L0" in selects:
+            allWinners, winners = maxes (vote(bsL0, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["L0"].append( winners )
+        if "Lp2" in selects:
+            allWinners, winners = maxes ( vote(bsLp2, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Lp2"].append( winners )
+        if "Lr2" in selects:
+            allWinners, winners = maxes ( vote(bsLr2, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Lr2"].append( winners )
+        if "Lp3" in selects:
+            allWinners, winners = maxes ( vote(bsLp3, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Lp3"].append( winners )
+        if "Lr3" in selects:
+            allWinners, winners = maxes ( vote(bsLr3, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Lr3"].append( winners )
+        if "I0" in selects:
+            allWinners, winners = maxes ( vote(bsInv0, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["I0"].append( winners )
+        if "Ip2" in selects:
+            allWinners, winners = maxes ( vote(bsInvp2, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Ip2"].append( winners )
+        if "Ir2" in selects:
+            allWinners, winners = maxes ( vote(bsInvr2, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Ir2"].append( winners )
+        if "Ip3" in selects:
+            allWinners, winners = maxes ( vote(bsInvp3, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Ip3"].append( winners )
+        if "Ir3" in selects:
+            allWinners, winners = maxes ( vote(bsInvr3, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Ir3"].append( winners )
+        if 'Cv' in selects:
+            allWinners, winners = maxes (vote(bsC, tailScores0, tiesAVG, 0), allWinners, firstIdx )
+            outputs["Cv"].append( winners )
+        if "allW" in selects:
+            outputs["allW"].append( list(allWinners) )
 
-    if 2 in selectionSet: # ["Ccet", 'NCcet', 'FC', 'TCi', 'TCe']
+    if select2:
         if truncLevel == nCandidates:
             PT = buildPrecedenceTable( True, False) # full condorcet
-#        PTft = buildPrecedenceTable( False, True)
+    #        PTft = buildPrecedenceTable( False, True)
         else:
             PT = buildPrecedenceTable( False, False) # truncated condorcet
+        if verbose:
+            print("Precedence table", PT)
         # TCa = checkCondorcet()
         # winners.append(TCa+firstIdx)
-        CC = computeCondorcet ( PT )
+        CC = computeCondorcetWinner(PT)
         CV = computeCopeland(PT)
         # print( PT, CC, CV)
         if xtractMode and (idx-1) in xtractList:
             print(idx-1, CC, PT)
         # assert TCa == TCb, "condorcet mismatch" + str(TCa) + '-' + str(TCb)
         if truncLevel == nCandidates:
-            winners.append(CC+firstIdx)
-            winners.append('-')
+            if "CcetW" in selects: outputs["CcetW"].append(CC+firstIdx)
         else:
-            winners.append('-')
-            winners.append(CC+firstIdx)
+            if "CcetTW" in selects: outputs["CcetTW"].append( CC+firstIdx )
 
-        if False:
-            winners.append( checkCondorcet() )
-        else:
-            winners.append(CV)
+        CL = computeCondorcetLoser(PT)
+        if "CcetL" in selects: outputs["CcetL"].append(CL)
+        if "Cop" in selects: outputs["Cop"].append( CV )
         # winners.append('-') # no longer computing condorcet under CheckCondorcet
         # winners.append(FC+firstIdx)
-        DtedSet = whoDominates( CC ) if CC != -1 else []
-        winners.append(DtedSet)
-        DsSet = whoIsDominatedBy( CC ) if CC != -1 else []
-        winners.append(DsSet)
+        if "Doms" in selects: outputs["Doms"].append(whoDominates( CC ) if CC != -1 else [] )
+        if "Domteds" in selects: outputs["Domteds"].append(whoIsDominatedBy( CC ) if CC != -1 else [] )
 
-#        if DtedSet != []:
-#                print (PT, voteTable, voteTally)
-    else:
-        winners += ['-' for i in range(len(Labels2))]
-    assert len(winners) == len(Labels1) + len(Labels2)
+        if "DomsL" in selects: outputs["DomsL"].append(whoDominates( CL ) if CC != -1 else [] )
+        if "DomtedsL" in selects: outputs["DomtedsL"].append(whoIsDominatedBy( CL ) if CC != -1 else [] )
 
-    if 3 in selectionSet:
+    if select3:
         bd,nbd,bdted = computeDominance()
-        winners.append(bd) #22
-        winners.append(nbd) #23
-        winners.append(bdted) #24
-        winners.append(computeDominants() if True else '-') # 25
-        winners.append(computeDominated() if True else '-') #26
-        winners.append(False) #27 # isDominated(TC) if TC != -1 else False
-        winners.append(dominates(1,2) if True else '-') # 28
-    else:
-        winners += ['-' for i in range(len(Labels3))]
-    assert len(winners) == len(Labels1) + len(Labels2)  + len(Labels3)
-
-    outLine = "# "+str(idx)+';' + '; '.join([ str(i) for i in winners])
-
-    if not xtractMode:
-        print(outLine)
+        if "BDt" in selects: outputs["BDt"].append(bd)
+        if "NotBDted" in selects: outputs["NotBDted"].append(nbd)
+        if "BDted" in selects: outputs["BDted"].append(bdted)
+        if "dominants" in selects: outputs["dominants"].append(computeDominants())
+        if "dominated" in selects: outputs["dominated"].append(computeDominated())
+        if "1d2" in selects: outputs["1d2"].append(dominates(1,2))
 
     votesLength = np.zeros(nCandidates, dtype=np.int32)
     ballots = np.zeros( (ballotTypes, nCandidates, 3), dtype=np.int32)    # next a count of the number of votes for that ballot type
     ballotDistribution = np.zeros( ballotTypes, dtype=np.int32)
-#    ballotTruncation = np.full( ballotTypes, truncLevel)
 
+    if verbose:
+        print(outputs)
 
+outfile = str(nCandidates) + '-'  + str(nVoters) +  ('-SPA-' if modelType == 's' else ('-' + eType+'-')) + str(nCases) + '.json'
 
-    # print (', ' + ', '.join([ "%.2f"%(i) for i in r0]) + ", votes (winner/maximum) ", max(r0), "/", nCandidates * totalVotes, ", for candidate:", r0.index(max(r0))+firstIdx )
-#    r1 = vote(ballotScores1, tailScores0, tiesAVG, 1) # nTO1/tail0/tiesAvg/Bottom
-    # print (', ' + ', '.join([ "%.2f"%(i) for i in r0]) + ", votes (winner/maximum) ", max(r0), "/", nCandidates * totalVotes, ", for candidate:", r0.index(max(r0))+firstIdx )
-#    r2 = vote(ballotScores3, tailScores0, tiesAVG, 0) # 1OVERn/tail0/tiesAvg/Top
-    # print (', ' + ', '.join([ "%.2f"%(i) for i in r0]) + ", votes (winner/maximum) ",  "%.2f"%(max(r0)), "/",  totalVotes, ", for candidate:", r0.index(max(r0))+firstIdx )
-#    r3 = vote(ballotScores3, tailScores0, tiesAVG, 1) # 1OVERn/tail0/tiesAvg/Bottom
-    # print (', ' + ', '.join([ "%.2f"%(i) for i in r0]) + ", votes (winner/maximum) ", "%.2f"%(max(r0)), "/", totalVotes, ", for candidate:", r0.index(max(r0))+firstIdx )
-#    r3 = vote(ballotScoresAP, tailScores0, tiesAVG, 0) # AP/tail0/tiesAvg/Top
-#    r4 = vote(ballotScoresAP, tailScores0, ties1, 0) # AP/tail0/tiesAvg/Top
-    # print (', ' + ', '.join([ "%.2f"%(i) for i in r0]) + ", votes (winner/maximum) ", max(r0), "/", totalVotes, ", for candidate:", r0.index(max(r0))+firstIdx )
-#    r5 = vote(bsFromGP0, tailScores0, tiesAVG, 0) # AP/tail0/tiesAvg/Top
+with open(outfile, 'w') as f:
+    json.dump( (nCandidates, nVoters, m, eType, idx, inFile, selects, outputs), f)
+f.close()

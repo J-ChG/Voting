@@ -2,6 +2,9 @@ import random
 import math
 import json
 import sys
+import support
+# import os.path
+from os import path
 
 # this programme generates elections according to an IC or IAC model
 # the output is a json file containing a tuple with
@@ -47,19 +50,17 @@ if "-r" in myargs:
 else:
   repeats = 1000
 
-if "-p" in myargs:
-    countStr =  myargs['-i']
-else:
-    countStr = "000"
-
-
 assert type == 'IC' or type == 'IAC', "wrong type"+type
 assert nCandidates * nVoters != 0, "Wrong values for #candidates or #voters"
 
-if type == 'IC':
-    outFile  = str(nCandidates) + "-" + str(nVoters) + "-IC-" + str(repeats) + "-r-" + countStr + '.json'
-else:
-    outFile = str(nCandidates) + "-" + str(nVoters) + "-IAC-" + str(repeats) + "-r-" + countStr + '.json'
+variants = 0
+while True:
+    countStr = (str(variants)).zfill(3)
+    outFile  = str(nCandidates) + "-" + str(nVoters) + "-" + type + "-" + str(repeats) + "-r-" + countStr + '.json'
+    if not path.exists(outFile):
+        break
+    else:
+        variants += 1
 
 results = []
 size = math.factorial( nCandidates )
@@ -86,4 +87,4 @@ else:
   print("won't happen")
 
 with open(outFile, 'w') as f:
-     json.dump(( nCandidates, nVoters, type, results), f)
+     json.dump(( nCandidates, nVoters, 'r', type, support.COrders(nCandidates), results), f)
